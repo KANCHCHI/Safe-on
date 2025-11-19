@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>SafeOn - Live Emergency Location</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f2f2f2;
+      padding: 20px;
+      text-align: center;
+    }
+    h1 { color: #e60000; }
+
+    #status {
+      padding: 10px;
+      margin: 10px auto;
+      width: 230px;
+      border-radius: 5px;
+      font-weight: bold;
+      color: white;
+      background: gray;
+    }
+
+    #location {
+      margin-top: 20px;
+      font-size: 18px;
+    }
+
+    #ipBox {
+      margin: 15px auto;
+      padding: 8px;
+      width: 260px;
+      font-size: 16px;
+      border-radius: 5px;
+      border: 1px solid #888;
+      text-align: center;
+    }
+
+    #connectBtn {
+      padding: 10px 20px;
+      background: #0066ff;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+
+    #connectBtn:hover {
+      background: #004ec2;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>🛡 SafeOn - Live Tracking</h1>
+
+  <input id="ipBox" placeholder="Enter ESP32 IP (ex: 192.168.1.10)">
+  <br>
+  <button id="connectBtn">Connect</button>
+
+  <div id="status">Waiting for connection...</div>
+
+  <div id="location">GPS not sent yet</div>
+
+  <script>
+    let ws;
+    const statusBox = document.getElementById("status");
+    const locBox = document.getElementById("location");
+    const ipBox = document.getElementById("ipBox");
+
+    // Load saved IP if available
+    if (localStorage.getItem("esp32_ip")) {
+      ipBox.value = localStorage.getItem("esp32_ip");
+    }
+
+    document.getElementById("connectBtn").onclick = () => {
+      const esp32_ip = ipBox.value.trim();
+
+      if (!esp32_ip) {
+        alert("Please enter a valid IP address!");
+        return;
+      }
+
+      // Save IP for next time
+      localStorage.setItem("esp32_ip", esp32_ip);
+
+      connectWebSocket(esp32_ip);
+    };
+
+    function connectWebSocket(ip) {
+      ws = new WebSocket(`ws://${ip}:81/`);
+
+      ws.onopen = () => {
+        statusBox.innerHTML = "Connected ✔";
+        statusBox.style.background = "green";
+        sendLocation(); // send first location immediately
+      };
+
+      ws.onclose = () => {
+        statusBox.innerHTML = "Disconnected ✖";
+        statusBox.style.background = "red";
+      };
+
+      ws.onmessage = (event) => {
+        console.log("Message:", event.data);
+
+        if (event.data === "vacation") {
+          sendLocation(); // emergency signal
+        }
+      };
+
+      // Auto-send every 10 seconds
+      setInterval(() => {
+        sendLocation();
+      }, 10000);
+    }
+
+    // 📍 Send GPS location
+    function sendLocation() {
+      const esp32_ip = ipBox.value.trim();
+      if (!esp32_ip) return;
+
+      if (!navigator.geolocation) {
+        locBox.innerHTML = "❌ GPS not supported!";
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition((pos) => {
+        const lat = pos.coords.latitude.toFixed(6);
+        const lon = pos.coords.longitude.toFixed(6);
+
+        locBox.innerHTML = `📍 Latitude: ${lat}<br>📍 Longitude: ${lon}<br><br>
+        <a href="https://maps.google.com/?q=${lat},${lon}" target="_blank">Open in Maps</a>`;
+
+        fetch(`http://${esp32_ip}/update?lat=${lat}&lon=${lon}`)
+          .then(res => console.log("Location sent:", res.status))
+          .catch(err => console.log("Error:", err));
+      });
+    }
+  </script>
+
+</body>
+</html>
